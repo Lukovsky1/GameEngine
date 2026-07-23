@@ -497,7 +497,6 @@ std::vector<char> HelloTriangleApplication::readFile(const std::string& filename
     return buffer;
 }
 
-
 void HelloTriangleApplication::createCommandPool() {
 
     vk::CommandPoolCreateInfo poolInfo {};
