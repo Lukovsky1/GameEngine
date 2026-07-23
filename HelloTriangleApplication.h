@@ -90,7 +90,10 @@ private:
     vk::PhysicalDeviceFeatures deviceFeatures;
     vk::raii::SurfaceKHR surface = nullptr;
     vk::raii::Queue queue = nullptr;
-    uint32_t queueIndex = ~0;
+    vk::raii::Queue transferQueue = nullptr;
+
+    uint32_t graphicsQueueIndex = ~0;
+    uint32_t transferQueueIndex = ~0;
 
     vk::raii::SwapchainKHR swapChain = nullptr;
     std::vector<vk::Image> swapChainImages;
@@ -104,6 +107,7 @@ private:
 
     vk::raii::CommandPool commandPool = nullptr;
     std::vector<vk::raii::CommandBuffer> commandBuffers;
+    vk::raii::CommandPool transferCommandPool = nullptr;
 
     vk::raii::DeviceMemory vertexBufferMemory = nullptr;
     vk::raii::Buffer vertexBuffer = nullptr;
@@ -138,6 +142,7 @@ private:
     void createCommandBuffers();
     void recordCommandBuffer(uint32_t imageIndex);
     void createVertexBuffer();
+    void copyBuffer(vk::Buffer sourceBuffer, vk::Buffer destinationBuffer, vk::DeviceSize size);
     void transitionImageLayout(uint32_t imageIndex,
         vk::ImageLayout oldLayout,
         vk::ImageLayout newLayout,

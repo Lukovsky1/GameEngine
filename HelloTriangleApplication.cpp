@@ -179,23 +179,32 @@ bool HelloTriangleApplication::isDeviceSuitable(vk::raii::PhysicalDevice const &
 //* Creates the logical device and retrieves a queue that can render and present.
 void HelloTriangleApplication::createLogicalDevice() {
     std::vector<vk::QueueFamilyProperties> queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
-    auto graphicsQueueFamilyProperty = std::ranges::find_if(queueFamilyProperties, [](auto const &qfp) { return (qfp.queueFlags & vk::QueueFlagBits::eGraphics) != static_cast<vk::QueueFlags>(0); });
-    auto graphicsIndex = static_cast<uint32_t>(std::distance(queueFamilyProperties.begin(), graphicsQueueFamilyProperty));
 
-    //* Rendering and presenting can live on different queue families, but this sample keeps
-    //* setup simple by requiring one family that can do both.
+    //!! Searching for queue family
     for (uint32_t qfpIndex = 0; qfpIndex < queueFamilyProperties.size(); qfpIndex++) {
+        //) Transfer ability check
+        if ((queueFamilyProperties[qfpIndex].queueFlags & vk::QueueFlagBits::eTransfer) &&
+            !(queueFamilyProperties[qfpIndex].queueFlags & vk::QueueFlagBits::eGraphics)) {
+            transferQueueIndex = qfpIndex;
+        }
+
+        //):  Check to see if the queue family of a physical device
+        //): supports presentation to a given surface (getSurfaceSupportKHR) and
+        //): can execute graphics commands.
         if ((queueFamilyProperties[qfpIndex].queueFlags & vk::QueueFlagBits::eGraphics) &&
             physicalDevice.getSurfaceSupportKHR(qfpIndex, *surface)) {
-            queueIndex = qfpIndex;
-            break;
-            }
+            graphicsQueueIndex = qfpIndex;
         }
-    if (queueIndex == ~0) {
-        throw std::runtime_error("Could not find a queue for graphics and present -> terminating");
     }
 
-    //* Vulkan feature enablement is expressed through a pNext chain. RAII's StructureChain
+    if (graphicsQueueIndex == ~0) {
+        throw std::runtime_error("Could not find a queue for graphics and present -> terminating");
+    }
+    if (transferQueueIndex == ~0) {
+        transferQueueIndex = graphicsQueueIndex;
+    }
+
+    //*  Vulkan feature enablement is expressed through a pNext chain. RAII's StructureChain
     //* keeps the structures linked correctly while we opt into newer rendering features.
     vk::StructureChain<
         vk::PhysicalDeviceFeatures2,
@@ -216,19 +225,31 @@ void HelloTriangleApplication::createLogicalDevice() {
     //* Create a Device
     float queuePriority = 0.5f;
     vk::DeviceQueueCreateInfo deviceQueueCreateInfo{};
-    deviceQueueCreateInfo.queueFamilyIndex = queueIndex;
+    deviceQueueCreateInfo.queueFamilyIndex = graphicsQueueIndex;
     deviceQueueCreateInfo.queueCount = 1;
     deviceQueueCreateInfo.pQueuePriorities = &queuePriority;
 
+    std::vector<vk::DeviceQueueCreateInfo> queueCreateInfos{deviceQueueCreateInfo};
+
+    if (transferQueueIndex != graphicsQueueIndex) {
+        vk::DeviceQueueCreateInfo transferQueueCreateInfo{};
+        transferQueueCreateInfo.queueFamilyIndex = transferQueueIndex;
+        transferQueueCreateInfo.queueCount = 1;
+        transferQueueCreateInfo.pQueuePriorities = &queuePriority;
+
+        queueCreateInfos.push_back(transferQueueCreateInfo);
+    }
+
     vk::DeviceCreateInfo deviceCreateInfo{};
     deviceCreateInfo.pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>();
-    deviceCreateInfo.queueCreateInfoCount = 1;
-    deviceCreateInfo.pQueueCreateInfos = &deviceQueueCreateInfo;
+    deviceCreateInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
+    deviceCreateInfo.pQueueCreateInfos = queueCreateInfos.data();
     deviceCreateInfo.enabledExtensionCount = static_cast<uint32_t>(requiredDeviceExtension.size());
     deviceCreateInfo.ppEnabledExtensionNames = requiredDeviceExtension.data();
 
     device = vk::raii::Device(physicalDevice, deviceCreateInfo);
-    queue  = vk::raii::Queue(device, queueIndex, 0);
+    queue  = vk::raii::Queue(device, graphicsQueueIndex, 0);
+    transferQueue = vk::raii::Queue(device, transferQueueIndex, 0);
 }
 
 //* Creates the Vulkan presentation surface tied to the GLFW window.
@@ -500,10 +521,43 @@ std::vector<char> HelloTriangleApplication::readFile(const std::string& filename
 void HelloTriangleApplication::createCommandPool() {
 
     vk::CommandPoolCreateInfo poolInfo {};
+    vk::CommandPoolCreateInfo transferPoolInfo{};
+
     poolInfo.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
-    poolInfo.queueFamilyIndex = queueIndex;
+    poolInfo.queueFamilyIndex = graphicsQueueIndex;
+
+    transferPoolInfo.flags = vk::CommandPoolCreateFlagBits::eTransient;
+    transferPoolInfo.queueFamilyIndex = transferQueueIndex;
 
     commandPool = vk::raii::CommandPool(device, poolInfo);
+    transferCommandPool = vk::raii::CommandPool(device, transferPoolInfo);
+}
+
+void HelloTriangleApplication::copyBuffer(vk::Buffer sourceBuffer,
+                                          vk::Buffer destinationBuffer,
+                                          vk::DeviceSize size) {
+    vk::CommandBufferAllocateInfo allocInfo{};
+    allocInfo.commandPool = *transferCommandPool;
+    allocInfo.level = vk::CommandBufferLevel::ePrimary;
+    allocInfo.commandBufferCount = 1;
+
+    vk::raii::CommandBuffers transferCommandBuffers(device, allocInfo);
+    auto& transferCommandBuffer = transferCommandBuffers.front();
+
+    vk::CommandBufferBeginInfo beginInfo{};
+    beginInfo.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
+    transferCommandBuffer.begin(beginInfo);
+
+    vk::BufferCopy copyRegion{};
+    copyRegion.size = size;
+    transferCommandBuffer.copyBuffer(sourceBuffer, destinationBuffer, copyRegion);
+    transferCommandBuffer.end();
+
+    vk::SubmitInfo submitInfo{};
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &*transferCommandBuffer;
+    transferQueue.submit(submitInfo);
+    transferQueue.waitIdle();
 }
 
 uint32_t HelloTriangleApplication::findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const {
@@ -524,7 +578,19 @@ void HelloTriangleApplication::createVertexBuffer() {
     vk::BufferCreateInfo bufferInfo{};
     bufferInfo.size        = sizeof(vertices[0]) * vertices.size();
     bufferInfo.usage    = vk::BufferUsageFlagBits::eVertexBuffer;
-    bufferInfo.sharingMode = vk::SharingMode::eExclusive;
+    const std::array<uint32_t, 2> queueFamilyIndices = {
+        graphicsQueueIndex,
+        transferQueueIndex
+    };
+
+    if (graphicsQueueIndex != transferQueueIndex) {
+        bufferInfo.sharingMode = vk::SharingMode::eConcurrent;
+        bufferInfo.queueFamilyIndexCount =
+            static_cast<uint32_t>(queueFamilyIndices.size());
+        bufferInfo.pQueueFamilyIndices = queueFamilyIndices.data();
+    } else {
+        bufferInfo.sharingMode = vk::SharingMode::eExclusive;
+    }
 
     vertexBuffer = vk::raii::Buffer(device, bufferInfo);
     const auto memRequirements = vertexBuffer.getMemoryRequirements();
