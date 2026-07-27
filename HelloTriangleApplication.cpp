@@ -574,51 +574,61 @@ uint32_t HelloTriangleApplication::findMemoryType(uint32_t typeFilter, vk::Memor
     throw std::runtime_error("failed to find suitable memory type!");
 }
 
+std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> HelloTriangleApplication::createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties) const {
+
+    vk::BufferCreateInfo   bufferInfo;
+    bufferInfo.size = size;
+    bufferInfo.usage = usage;
+    bufferInfo.sharingMode = vk::SharingMode::eExclusive;
+
+    vk::raii::Buffer       buffer          = vk::raii::Buffer(device, bufferInfo);
+    vk::MemoryRequirements memRequirements = buffer.getMemoryRequirements();
+    vk::MemoryAllocateInfo allocInfo;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);
+    vk::raii::DeviceMemory bufferMemory = vk::raii::DeviceMemory(device, allocInfo);
+
+    buffer.bindMemory(*bufferMemory, 0);
+    return {std::move(buffer), std::move(bufferMemory)};
+
+}
+
+void HelloTriangleApplication::copyBuffer(vk::raii::Buffer & srcBuffer, vk::raii::Buffer & dstBuffer, vk::DeviceSize size)
+{
+    vk::CommandBufferAllocateInfo allocInfo;
+    allocInfo.commandPool = commandPool;
+    allocInfo.level = vk::CommandBufferLevel::ePrimary;
+    allocInfo.commandBufferCount = 1;
+    vk::raii::CommandBuffer commandCopyBuffer = std::move(device.allocateCommandBuffers(allocInfo).front());
+
+    vk::CommandBufferBeginInfo beginInfo{};
+    beginInfo.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
+
+    commandCopyBuffer.begin(beginInfo);
+    commandCopyBuffer.copyBuffer(*srcBuffer, *dstBuffer, vk::BufferCopy(0, 0, size));
+    commandCopyBuffer.end();
+
+    vk::SubmitInfo submitInfo{};
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &*commandCopyBuffer;
+    queue.submit(submitInfo, nullptr);
+    queue.waitIdle();
+}
+
 void HelloTriangleApplication::createVertexBuffer() {
-    vk::BufferCreateInfo bufferInfo{};
-    bufferInfo.size        = sizeof(vertices[0]) * vertices.size();
-    bufferInfo.usage    = vk::BufferUsageFlagBits::eVertexBuffer;
-    const std::array<uint32_t, 2> queueFamilyIndices = {
-        graphicsQueueIndex,
-        transferQueueIndex
-    };
+    vk::DeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
 
-    if (graphicsQueueIndex != transferQueueIndex) {
-        bufferInfo.sharingMode = vk::SharingMode::eConcurrent;
-        bufferInfo.queueFamilyIndexCount =
-            static_cast<uint32_t>(queueFamilyIndices.size());
-        bufferInfo.pQueueFamilyIndices = queueFamilyIndices.data();
-    } else {
-        bufferInfo.sharingMode = vk::SharingMode::eExclusive;
-    }
+    auto [stagingBuffer, stagingBufferMemory] =
+        createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
-    vertexBuffer = vk::raii::Buffer(device, bufferInfo);
-    const auto memRequirements = vertexBuffer.getMemoryRequirements();
+    void *dataStaging = stagingBufferMemory.mapMemory(0, bufferSize);
+    memcpy(dataStaging, vertices.data(), bufferSize);
+    stagingBufferMemory.unmapMemory();
 
-    vk::MemoryAllocateInfo memoryAllocateInfo{};
-    memoryAllocateInfo.allocationSize = memRequirements.size;
-    memoryAllocateInfo.memoryTypeIndex = findMemoryType(
-        memRequirements.memoryTypeBits,
-        vk::MemoryPropertyFlagBits::eHostVisible |
-        vk::MemoryPropertyFlagBits::eHostCoherent);
+    std::tie(vertexBuffer, vertexBufferMemory) =
+        createBuffer(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal);
 
-    vertexBufferMemory = vk::raii::DeviceMemory(device, memoryAllocateInfo);
-    vertexBuffer.bindMemory(*vertexBufferMemory, 0);
-
-    //*  This function allows us to access a region of specified memory resource
-    //* defined by an offset and size. The offset and size here are 0 and
-    //* bufferInfo.size, respectively.
-    void* data = vertexBufferMemory.mapMemory(0, bufferInfo.size);
-
-    //* We simply memcpy the vertex data to the mapped memory and unmap it again
-    memcpy(data, vertices.data(), bufferInfo.size);
-    vertexBufferMemory.unmapMemory();
-
-    //*  Unfortunately, the driver may not immediately copy the data
-    //* into the buffer memory because of cashing.
-    //*  To deal with that, we use a memory heap that is host coherent,
-    //* which ensures that the mapped memory always matches
-    //* the contents of the allocated memory. (MemoryPropertyFlagBits::eHostCoherent)
+    copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
 }
 
 void HelloTriangleApplication::createCommandBuffers() {

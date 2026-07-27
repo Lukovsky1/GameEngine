@@ -141,8 +141,10 @@ private:
     void createCommandPool();
     void createCommandBuffers();
     void recordCommandBuffer(uint32_t imageIndex);
+    std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties) const;
     void createVertexBuffer();
     void copyBuffer(vk::Buffer sourceBuffer, vk::Buffer destinationBuffer, vk::DeviceSize size);
+    void copyBuffer(vk::raii::Buffer & srcBuffer, vk::raii::Buffer & gistBuffer, vk::DeviceSize size);
     void transitionImageLayout(uint32_t imageIndex,
         vk::ImageLayout oldLayout,
         vk::ImageLayout newLayout,
