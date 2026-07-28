@@ -13,7 +13,11 @@ import vulkan_hpp;
 #include <string>
 #include <cstdlib>
 #include <fstream>
+#define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+
+#include <chrono>
 
 #if defined(_WIN32)
 #define VK_USE_PLATFORM_WIN32_KHR
@@ -29,6 +33,14 @@ using namespace std;
 constexpr uint32_t WIDTH = 800;
 constexpr uint32_t HEIGHT = 600;
 constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
+
+struct UniformBufferObject
+{
+    glm::mat4 model;
+    glm::mat4 view;
+    glm::mat4 proj;
+};
+
 struct Vertex {
     glm::vec2 pos;
     glm::vec3 color;
@@ -107,6 +119,13 @@ private:
 
     std::vector<vk::raii::ImageView> swapChainImageViews;
 
+    void createDescriptorSetLayout();
+    vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
+    vk::raii::DescriptorPool descriptorPool = nullptr;
+    std::vector<vk::raii::DescriptorSet> descriptorSets;
+
+    void createDescriptorSets();
+
     vk::raii::PipelineLayout pipelineLayout = nullptr;
     vk::raii::Pipeline graphicsPipeline     = nullptr;
 
@@ -118,6 +137,10 @@ private:
     vk::raii::Buffer vertexBuffer = nullptr;
     vk::raii::Buffer       indexBuffer        = nullptr;
     vk::raii::DeviceMemory indexBufferMemory  = nullptr;
+
+    std::vector<vk::raii::Buffer>       uniformBuffers;
+    std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
+    std::vector<void *>                 uniformBuffersMapped;
 
     std::vector<vk::raii::Semaphore> presentCompleteSemaphores;
     std::vector<vk::raii::Semaphore> renderFinishedSemaphores;
@@ -151,6 +174,9 @@ private:
     std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties) const;
     void createVertexBuffer();
     void createIndexBuffer();
+    void createUniformBuffers();
+    void createDescriptorPool();
+    void updateUniformBUffer(uint32_t currentImage);
     void copyBuffer(vk::Buffer sourceBuffer, vk::Buffer destinationBuffer, vk::DeviceSize size);
     void copyBuffer(vk::raii::Buffer & srcBuffer, vk::raii::Buffer & gistBuffer, vk::DeviceSize size);
     void transitionImageLayout(uint32_t imageIndex,
@@ -167,4 +193,6 @@ private:
     void cleanupSwapChain();
     static void framebufferResizeCallback(GLFWwindow* window, int width, int height);
     uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const;
+
+
 };
