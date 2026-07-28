@@ -49,6 +49,7 @@ void HelloTriangleApplication::initVulkan() {
     createGraphicsPipeline();
     createCommandPool();
     createVertexBuffer();
+    createIndexBuffer();
     createCommandBuffers();
     createSyncObjects();
 }
@@ -631,6 +632,22 @@ void HelloTriangleApplication::createVertexBuffer() {
     copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
 }
 
+void HelloTriangleApplication::createIndexBuffer() {
+    vk::DeviceSize bufferSize = sizeof(indices[0]) * indices.size();
+
+    auto [stagingBuffer, stagingBufferMemory] =
+        createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+
+    void *data = stagingBufferMemory.mapMemory(0, bufferSize);
+    memcpy(data, indices.data(), (size_t) bufferSize);
+    stagingBufferMemory.unmapMemory();
+
+    std::tie(indexBuffer, indexBufferMemory) =
+        createBuffer(bufferSize, vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+    copyBuffer(stagingBuffer, indexBuffer, bufferSize);
+}
+
 void HelloTriangleApplication::createCommandBuffers() {
     vk::CommandBufferAllocateInfo allocInfo{};
     allocInfo.commandPool = *commandPool;
@@ -682,10 +699,11 @@ void HelloTriangleApplication::recordCommandBuffer(uint32_t imageIndex) {
     vk::Rect2D scissor{vk::Offset2D{0, 0}, swapChainExtent};
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline);
-    commandBuffer.bindVertexBuffers(0, *vertexBuffer, {0});
+    commandBuffers[frameIndex].bindVertexBuffers(0, *vertexBuffer, {0});
+    commandBuffers[frameIndex].bindIndexBuffer(*indexBuffer, 0, vk::IndexType::eUint16);
     commandBuffer.setViewport(0, viewport);
     commandBuffer.setScissor(0, scissor);
-    commandBuffer.draw(static_cast<uint32_t>(vertices.size()), 1, 0 , 0);
+    commandBuffer.drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 
     commandBuffer.endRendering();
 
