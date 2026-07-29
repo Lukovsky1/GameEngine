@@ -25,9 +25,53 @@ void HelloTriangleApplication::initWindow() {
     window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
+    glfwSetCursorPosCallback(window, mouseMoveCallback);
+    glfwSetMouseButtonCallback(window, mouseButtonCallback);
     if (window == nullptr) {
         glfwTerminate();
         throw std::runtime_error("failed to create GLFW window");
+    }
+}
+
+void HelloTriangleApplication::mouseMoveCallback(GLFWwindow *window, double mouseX, double mouseY) {
+    auto* app = reinterpret_cast<HelloTriangleApplication*>(
+        glfwGetWindowUserPointer(window));
+
+    if (!app->isRotating) {
+        app->lastMouseX = mouseX;
+        app->lastMouseY = mouseY;
+        return;
+    }
+
+    if (app->firstMouse) {
+        app->lastMouseX = mouseX;
+        app->lastMouseY = mouseY;
+        app->firstMouse = false;
+        return;
+    }
+
+    const float sensitivity = 0.005f;
+
+    glm::vec2 mouseDelta{
+        static_cast<float>(mouseX - app->lastMouseX),
+        static_cast<float>(mouseY - app->lastMouseY)
+    };
+
+    app->modelYaw += mouseDelta.x * sensitivity;
+    app->modelPitch += mouseDelta.y * sensitivity;
+
+    app->lastMouseX = mouseX;
+    app->lastMouseY = mouseY;
+
+}
+
+void HelloTriangleApplication::mouseButtonCallback(GLFWwindow *window, int button, int action, int mods) {
+    auto* app = reinterpret_cast<HelloTriangleApplication*>(
+        glfwGetWindowUserPointer(window));
+
+    if (button == GLFW_MOUSE_BUTTON_LEFT) {
+        app->isRotating = (action == GLFW_PRESS);
+        app->firstMouse = true; // Prevents a jump when clicking again.
     }
 }
 
@@ -727,11 +771,15 @@ void HelloTriangleApplication::updateUniformBUffer(uint32_t currentImage) {
     float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
     UniformBufferObject ubo{};
-    ubo.model = rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-
+    // ubo.model = rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    //
     ubo.view = lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-
+    //
     ubo.proj = glm::perspective(glm::radians(45.0f), static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height), 0.1f, 10.0f);
+
+    ubo.model = glm::mat4(1.0f);
+    ubo.model = glm::rotate(ubo.model, modelYaw, glm::vec3(0.0f, 1.0f, 0.0f));
+    ubo.model = glm::rotate(ubo.model, modelPitch, glm::vec3(1.0f, 0.0f, 0.0f));
 
     ubo.proj[1][1] *= -1;
 

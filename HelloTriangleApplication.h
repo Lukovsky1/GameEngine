@@ -96,6 +96,12 @@ public:
     void run();
 
 private:
+    float modelYaw = 0.0f;
+    float modelPitch = 0.0f;
+    double lastMouseX = WIDTH / 2.0;
+    double lastMouseY = HEIGHT / 2.0;
+    bool firstMouse = true;
+    bool isRotating = false;
     vk::raii::Context  context;
     vk::raii::Instance instance = nullptr;
     GLFWwindow* window = nullptr;
@@ -193,6 +199,7 @@ private:
     void cleanupSwapChain();
     static void framebufferResizeCallback(GLFWwindow* window, int width, int height);
     uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const;
-
+    static void mouseMoveCallback(GLFWwindow* window, double mouseX, double mouseY);
+    static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
 
 };
