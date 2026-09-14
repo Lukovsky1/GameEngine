@@ -38,6 +38,7 @@ set(SHADER_SLANG_SOURCES ${CMAKE_CURRENT_LIST_DIR}/shaders/shaders.slang)
 add_executable(Game main.cpp
         HelloTriangleApplication.cpp
         HelloTriangleApplication.h
+        stb_image.h
 )
 add_slang_shader_target(foo SOURCES ${SHADER_SLANG_SOURCES})
 add_dependencies(Game foo)

@@ -17,6 +17,7 @@ import vulkan_hpp;
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+
 #include <chrono>
 
 #if defined(_WIN32)
@@ -44,17 +45,14 @@ struct UniformBufferObject
 struct Vertex {
     glm::vec2 pos;
     glm::vec3 color;
+    glm::vec2 texCoord;
 
     static vk::VertexInputBindingDescription getBindingDescription() {
-        vk::VertexInputBindingDescription bindingDescription{};
-        bindingDescription.binding = 0;
-        bindingDescription.stride = sizeof(Vertex);
-        bindingDescription.inputRate = vk::VertexInputRate::eVertex;
-        return bindingDescription;
+        return {0, sizeof(Vertex), vk::VertexInputRate::eVertex};
     }
 
-    static std::array<vk::VertexInputAttributeDescription, 2> getAttributeDescriptions() {
-        std::array<vk::VertexInputAttributeDescription, 2> attributeDescriptions{};
+    static std::array<vk::VertexInputAttributeDescription, 3> getAttributeDescriptions() {
+        std::array<vk::VertexInputAttributeDescription, 3> attributeDescriptions{};
 
         attributeDescriptions[0].location = 0;
         attributeDescriptions[0].binding = 0;
@@ -66,15 +64,20 @@ struct Vertex {
         attributeDescriptions[1].format = vk::Format::eR32G32B32Sfloat;
         attributeDescriptions[1].offset = offsetof(Vertex, color);
 
+        attributeDescriptions[2].location = 2;
+        attributeDescriptions[2].binding = 0;
+        attributeDescriptions[2].format = vk::Format::eR32G32Sfloat;
+        attributeDescriptions[2].offset = offsetof(Vertex, texCoord);
+
         return attributeDescriptions;
     }
 };
 
 const std::vector<Vertex> vertices = {
-    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
+    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}
 };
 
 const std::vector<uint16_t> indices = {
@@ -154,6 +157,11 @@ private:
     uint32_t frameIndex = 0;
     bool framebufferResized = false;
 
+    vk::raii::Image        textureImage       = nullptr;
+    vk::raii::DeviceMemory textureImageMemory = nullptr;
+    vk::raii::ImageView textureImageView      = nullptr;
+    vk::raii::Sampler textureSampler          = nullptr;
+
     void initWindow();
     void initVulkan();
     void mainLoop();
@@ -182,8 +190,8 @@ private:
     void createIndexBuffer();
     void createUniformBuffers();
     void createDescriptorPool();
-    void updateUniformBUffer(uint32_t currentImage);
-    void copyBuffer(vk::Buffer sourceBuffer, vk::Buffer destinationBuffer, vk::DeviceSize size);
+    void updateUniformBuffer(uint32_t currentImage);
+    void copyBuffer(vk::Buffer &sourceBuffer, vk::Buffer &destinationBuffer, vk::DeviceSize size);
     void copyBuffer(vk::raii::Buffer & srcBuffer, vk::raii::Buffer & gistBuffer, vk::DeviceSize size);
     void transitionImageLayout(uint32_t imageIndex,
         vk::ImageLayout oldLayout,
@@ -202,4 +210,14 @@ private:
     static void mouseMoveCallback(GLFWwindow* window, double mouseX, double mouseY);
     static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
 
+    void createTextureImage();
+    std::pair<vk::raii::Image, vk::raii::DeviceMemory> createImage(
+        uint32_t width, uint32_t height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties);
+    vk::raii::CommandBuffer beginSingleTimeCommands();
+    void endSingleTimeCommands(vk::raii::CommandBuffer &&commandBuffer);
+    void transitionImageLayout(vk::raii::CommandBuffer &commandBuffer, const vk::raii::Image &image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout);
+    void copyBufferToImage(vk::raii::CommandBuffer &commandBuffer, const vk::raii::Buffer &buffer, vk::raii::Image &image, uint32_t width, uint32_t height);
+    vk::raii::ImageView createImageView(vk::Image const &image, vk::Format format);
+    void createTextureImageView();
+    void createTextureSampler();
 };
