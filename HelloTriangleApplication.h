@@ -7,6 +7,7 @@ import vulkan_hpp;
 #include <GLFW/glfw3.h>
 
 #include <cstring>
+#include <cstddef>
 #include <iostream>
 #include <ranges>
 #include <stdexcept>
@@ -43,7 +44,7 @@ struct UniformBufferObject
 };
 
 struct Vertex {
-    glm::vec2 pos;
+    glm::vec3 pos;
     glm::vec3 color;
     glm::vec2 texCoord;
 
@@ -52,35 +53,31 @@ struct Vertex {
     }
 
     static std::array<vk::VertexInputAttributeDescription, 3> getAttributeDescriptions() {
-        std::array<vk::VertexInputAttributeDescription, 3> attributeDescriptions{};
-
-        attributeDescriptions[0].location = 0;
-        attributeDescriptions[0].binding = 0;
-        attributeDescriptions[0].format = vk::Format::eR32G32Sfloat;
-        attributeDescriptions[0].offset = offsetof(Vertex, pos);
-
-        attributeDescriptions[1].location = 1;
-        attributeDescriptions[1].binding = 0;
-        attributeDescriptions[1].format = vk::Format::eR32G32B32Sfloat;
-        attributeDescriptions[1].offset = offsetof(Vertex, color);
-        attributeDescriptions[2].location = 2;
-        attributeDescriptions[2].binding = 0;
-        attributeDescriptions[2].format = vk::Format::eR32G32Sfloat;
-        attributeDescriptions[2].offset = offsetof(Vertex, texCoord);
-
-        return attributeDescriptions;
+        return {
+            vk::VertexInputAttributeDescription(0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, pos)),
+            vk::VertexInputAttributeDescription(1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, color)),
+            vk::VertexInputAttributeDescription(2, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, texCoord))
+        };
     }
 };
 
 const std::vector<Vertex> vertices = {
-    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}
+    // Top plane: z = 0.05
+    {{-0.5f, -0.5f,  0.05f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+    {{ 0.5f, -0.5f,  0.05f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+    {{ 0.5f,  0.5f,  0.05f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+    {{-0.5f,  0.5f,  0.05f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
+
+    // Bottom plane: z = -0.05
+    {{-0.5f, -0.5f, -0.55f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+    {{ 0.5f, -0.5f, -0.55f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+    {{ 0.5f,  0.5f, -0.55f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+    {{-0.5f,  0.5f, -0.55f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
 };
 
 const std::vector<uint16_t> indices = {
-    0, 1, 2, 2, 3, 0
+    0, 1, 2, 2, 3, 0,
+    4, 5, 6, 6, 7, 4
 };
 
 const vector<char const*> validationLayers = {
@@ -161,6 +158,10 @@ private:
     vk::raii::ImageView textureImageView      = nullptr;
     vk::raii::Sampler textureSampler          = nullptr;
 
+    vk::raii::Image         depthImage        = nullptr;
+    vk::raii::DeviceMemory  depthImageMemory  = nullptr;
+    vk::raii::ImageView     depthImageView    = nullptr;
+
     void initWindow();
     void initVulkan();
     void mainLoop();
@@ -192,13 +193,14 @@ private:
     void updateUniformBuffer(uint32_t currentImage);
     void copyBuffer(vk::Buffer &sourceBuffer, vk::Buffer &destinationBuffer, vk::DeviceSize size);
     void copyBuffer(vk::raii::Buffer & srcBuffer, vk::raii::Buffer & gistBuffer, vk::DeviceSize size);
-    void transitionImageLayout(uint32_t imageIndex,
+    void transitionImageLayout(vk::Image image,
         vk::ImageLayout oldLayout,
         vk::ImageLayout newLayout,
         vk::AccessFlags2 srcAccessMask,
         vk::AccessFlags2 dstAccessMask,
         vk::PipelineStageFlags2 srcStageMask,
-        vk::PipelineStageFlags2 dstStageMask);
+        vk::PipelineStageFlags2 dstStageMask,
+        vk::ImageAspectFlags imageAspectFlags);
     void drawFrame();
     void createSyncObjects();
 
@@ -216,7 +218,11 @@ private:
     void endSingleTimeCommands(vk::raii::CommandBuffer &&commandBuffer);
     void transitionImageLayout(vk::raii::CommandBuffer &commandBuffer, const vk::raii::Image &image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout);
     void copyBufferToImage(vk::raii::CommandBuffer &commandBuffer, const vk::raii::Buffer &buffer, vk::raii::Image &image, uint32_t width, uint32_t height);
-    vk::raii::ImageView createImageView(vk::Image const &image, vk::Format format);
+    vk::raii::ImageView createImageView(vk::Image const &image, vk::Format format, vk::ImageAspectFlags aspectFlags);
     void createTextureImageView();
     void createTextureSampler();
+
+    void createDepthResources();
+    vk::Format findSupportedFormat(const std::vector<vk::Format>& candidates, vk::ImageTiling tiling, vk::FormatFeatureFlags features);
+    vk::Format findDepthFormat();
 };
