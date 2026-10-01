@@ -5,10 +5,19 @@ set(CMAKE_CXX_STANDARD 20)
 
 find_package(glfw3 REQUIRED)
 find_package(Vulkan REQUIRED)
+include(FetchContent)
 find_program(SLANGC_EXECUTABLE NAMES slangc HINTS ENV VULKAN_SDK PATH_SUFFIXES bin)
 if(NOT SLANGC_EXECUTABLE)
     message(FATAL_ERROR "slangc not found. Install Slang or set SLANGC_EXECUTABLE/VULKAN_SDK.")
 endif()
+
+FetchContent_Declare(
+    tinyobjloader
+    GIT_REPOSITORY https://github.com/tinyobjloader/tinyobjloader.git
+    GIT_TAG v2.0.0rc13
+    GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(tinyobjloader)
 
 include_directories(/opt/homebrew/include)
 link_directories(/opt/homebrew/lib)
@@ -43,6 +52,6 @@ add_executable(Game main.cpp
 add_slang_shader_target(foo SOURCES ${SHADER_SLANG_SOURCES})
 add_dependencies(Game foo)
 
-target_link_libraries(Game glfw Vulkan::Vulkan)
+target_link_libraries(Game PRIVATE glfw Vulkan::Vulkan tinyobjloader)
 
 target_include_directories(Game PRIVATE /opt/homebrew/include)

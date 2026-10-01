@@ -100,6 +100,7 @@ void HelloTriangleApplication::initVulkan() {
     createTextureImage();
     createTextureImageView();
     createTextureSampler();
+    loadModel();
     createVertexBuffer();
     createIndexBuffer();
     createUniformBuffers();
@@ -896,7 +897,7 @@ void HelloTriangleApplication::recordCommandBuffer(uint32_t imageIndex) {
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline);
     commandBuffers[frameIndex].bindVertexBuffers(0, *vertexBuffer, {0});
-    commandBuffers[frameIndex].bindIndexBuffer(*indexBuffer, 0, vk::IndexType::eUint16);
+    commandBuffers[frameIndex].bindIndexBuffer(*indexBuffer, 0, vk::IndexTypeValue<decltype(indices)::value_type>::value);
     commandBuffer.setViewport(0, viewport);
     commandBuffer.setScissor(0, scissor);
     commandBuffers[frameIndex].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, *descriptorSets[frameIndex], nullptr);
@@ -1084,7 +1085,7 @@ std::pair<vk::raii::Image, vk::raii::DeviceMemory> HelloTriangleApplication::cre
 void HelloTriangleApplication::createTextureImage()
 {
     int            texWidth, texHeight, texChannels;
-    stbi_uc       *pixels    = stbi_load("textures/MyTexture.jpg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+    stbi_uc       *pixels    = stbi_load(TEXTURE_PATH.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
     vk::DeviceSize imageSize = texWidth * texHeight * 4;
 
     if (!pixels)
@@ -1268,4 +1269,45 @@ vk::Format HelloTriangleApplication::findDepthFormat() {
     return findSupportedFormat({vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint},
                                vk::ImageTiling::eOptimal,
                                vk::FormatFeatureFlagBits::eDepthStencilAttachment);
+}
+
+void HelloTriangleApplication::loadModel() {
+    std::unordered_map<Vertex, uint32_t> uniqueVertices{};
+    tinyobj::attrib_t                attrib;
+    std::vector<tinyobj::shape_t>    shapes;
+    std::vector<tinyobj::material_t> materials;
+    std::string                      warn, err;
+
+    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, MODEL_PATH.c_str())) {
+        throw std::runtime_error(warn + err);
+    }
+
+    // Combine all of the faces in the file into a single model, iterate over all the shapes
+    for (const auto& shape : shapes) {
+        for (const auto& index : shape.mesh.indices) {
+            Vertex vertex{};
+
+            vertex.pos = {
+                attrib.vertices[3 * index.vertex_index + 0],
+                attrib.vertices[3 * index.vertex_index + 1],
+                attrib.vertices[3 * index.vertex_index + 2]
+            };
+
+            vertex.texCoord = {
+                attrib.texcoords[2 * index.texcoord_index + 0],
+                1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+            };
+
+            vertex.color = {1.0f, 1.0f, 1.0f};
+
+            auto [it, inserted] = uniqueVertices.insert(
+                {vertex, static_cast<uint32_t>(vertices.size())});
+            if (inserted) {
+                vertices.push_back(vertex);
+            }
+
+            indices.push_back(it->second);
+        }
+    }
+
 }

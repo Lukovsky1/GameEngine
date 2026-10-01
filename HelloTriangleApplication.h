@@ -8,15 +8,19 @@ import vulkan_hpp;
 
 #include <cstring>
 #include <cstddef>
+#include <functional>
 #include <iostream>
 #include <ranges>
 #include <stdexcept>
 #include <string>
 #include <cstdlib>
 #include <fstream>
+#include <unordered_map>
 #define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
+#define GLM_ENABLE_EXPERIMENTAL
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/hash.hpp>
 
 
 #include <chrono>
@@ -28,6 +32,8 @@ import vulkan_hpp;
 #define GLFW_EXPOSE_NATIVE_COCOA
 #endif
 
+#include <tiny_obj_loader.h>
+
 #include <GLFW/glfw3native.h>
 
 using namespace std;
@@ -35,6 +41,8 @@ using namespace std;
 constexpr uint32_t WIDTH = 800;
 constexpr uint32_t HEIGHT = 600;
 constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
+const std::string MODEL_PATH = "viking_room.obj";
+const std::string TEXTURE_PATH = "viking_room.png";
 
 struct UniformBufferObject
 {
@@ -47,6 +55,10 @@ struct Vertex {
     glm::vec3 pos;
     glm::vec3 color;
     glm::vec2 texCoord;
+
+    bool operator==(const Vertex& other) const {
+        return pos == other.pos && color == other.color && texCoord == other.texCoord;
+    }
 
     static vk::VertexInputBindingDescription getBindingDescription() {
         return {0, sizeof(Vertex), vk::VertexInputRate::eVertex};
@@ -61,23 +73,13 @@ struct Vertex {
     }
 };
 
-const std::vector<Vertex> vertices = {
-    // Top plane: z = 0.05
-    {{-0.5f, -0.5f,  0.05f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-    {{ 0.5f, -0.5f,  0.05f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-    {{ 0.5f,  0.5f,  0.05f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-    {{-0.5f,  0.5f,  0.05f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
-
-    // Bottom plane: z = -0.05
-    {{-0.5f, -0.5f, -0.55f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-    {{ 0.5f, -0.5f, -0.55f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-    {{ 0.5f,  0.5f, -0.55f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-    {{-0.5f,  0.5f, -0.55f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
-};
-
-const std::vector<uint16_t> indices = {
-    0, 1, 2, 2, 3, 0,
-    4, 5, 6, 6, 7, 4
+template<>
+struct std::hash<Vertex> {
+    size_t operator()(const Vertex& vertex) const {
+        return ((std::hash<glm::vec3>{}(vertex.pos) ^
+                 (std::hash<glm::vec3>{}(vertex.color) << 1)) >> 1) ^
+               (std::hash<glm::vec2>{}(vertex.texCoord) << 1);
+    }
 };
 
 const vector<char const*> validationLayers = {
@@ -138,6 +140,8 @@ private:
     std::vector<vk::raii::CommandBuffer> commandBuffers;
     vk::raii::CommandPool transferCommandPool = nullptr;
 
+    std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices;
     vk::raii::DeviceMemory vertexBufferMemory = nullptr;
     vk::raii::Buffer vertexBuffer = nullptr;
     vk::raii::Buffer       indexBuffer        = nullptr;
@@ -225,4 +229,6 @@ private:
     void createDepthResources();
     vk::Format findSupportedFormat(const std::vector<vk::Format>& candidates, vk::ImageTiling tiling, vk::FormatFeatureFlags features);
     vk::Format findDepthFormat();
+
+    void loadModel();
 };
